@@ -1,0 +1,115 @@
+---
+title: "Webscraping psp game reviews"
+author: "Andrew"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+This script scrapes the metacritic website for PSP game names, descriptions and scores
+
+```{r setup, include=FALSE}
+library(rvest)
+library(tidyverse)
+```
+
+```{r}
+# Function used to extract text data from the list of elements from rvest html 'supernode'. Need to provide a tag that will be extracted from supernode. Tip: Use css selector gadget to identify the tag for the supernode.
+html_extractor <- function(super_node_read, tag) {
+    map_chr(super_node_read, ~html_node(., tag) %>%
+    html_text() %>%
+    # This if statement returns NA if the node does not have the element of interest e.g. no urls
+    {if(length(.) == 0) NA else .}) %>%
+    # Remove any whitespace associated with the text
+    trimws(which = "both", whitespace = "[ \t\r\n→]")
+}
+
+# THis functions loops through the different pages of the website that you intend to scrape and calls the html_extractor for each data type for scraping. Tags were identified using css selector gadget
+scrape_data <- function(i){
+    # Start by reading a HTML page with read_html():
+  pub_html <- read_html(paste0("https://www.metacritic.com/browse/games/score/metascore/all/ps2/filtered?page=", i))
+
+  # read as vector of all blocks of supernode (imp: use html_nodes function)
+  super_node_read <- html_nodes(pub_html, ".clamp-summary-wrap")
+
+  # Extract titles, publishers, and other metadata from the supernode using the html_extractor function
+  titles <- html_extractor(super_node_read, ".title h3")
+  
+  dates <-  html_extractor(super_node_read, ".platform+ span")
+  
+  rating_scores <- html_extractor(super_node_read, ".large")
+  
+  descriptions <- html_extractor(super_node_read, ".summary")
+ 
+  # Bind everything into a tibble
+  data_concat <- tibble(titles, dates, rating_scores, descriptions)
+  
+   # Sleep for 0.5 second to avoid overloading the website
+  Sys.sleep(0.5)
+  
+  # print out progress
+  print(paste("Page", i, "scraped") )
+  
+  # return tibble
+  data_concat
+}
+```
+
+# Run scraping function here
+```{r}
+scraped_data <- seq(from=0, to=15) %>%
+  map_df(scrape_data) %>%
+  # Drop any titles that are missing and are duplicated
+  drop_na(titles) 
+
+
+write.csv(scraped_data, "metacritic_psp_game_reviews.csv")
+```
+
+
+# Scraping list of Playstation 1 games from Emulatorgames.com
+
+Here, we are only interested in getting the titles of the games so it's much easier than the previous section. Here we dont need to use the complicated function because we are only extracting titles!
+```{r}
+
+# Loop through and get titles of all the Playstation 1 games
+scrape_data_simple_ps1 <- function(i){
+  # Start by reading a HTML page with read_html():
+  # The first page has a different url so need to account for this
+  if (i == 1) {
+    pub_html <- read_html("https://www.emulatorgames.net/roms/playstation/")
+  } else {
+    # For pages 2 onwards, iterate over different html pages
+  pub_html <- read_html(paste0("https://www.emulatorgames.net/roms/playstation/", i,"/"))
+  }
+  
+  # Extract titles
+  titles <- pub_html %>%
+    html_elements(".site-box-title") %>%
+    html_text() %>%
+    trimws(which = "both", whitespace = "[ \t\r\n→]")
+ 
+  # turn extracted titles into a dataframe
+  data_concat <- tibble(titles)
+  
+   # Sleep for 0.5 second to avoid overloading the website
+  Sys.sleep(0.5)
+  
+  # print out progress
+  print(paste("Page", i, "scraped") )
+  
+  # return tibble
+  return(data_concat)
+}
+
+
+# Scrape data 
+scraped_data_ps1 <- seq(from=1, to=15) %>%
+  map_df(scrape_data_simple_ps1) %>%
+  # Arrange titles by alphabetical order
+  arrange(titles) 
+
+# Export as a csv file
+write.csv(scraped_data_ps1, "ps1_game_roms_list.csv", row.names = FALSE)
+
+```
+
